@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>WebRTC Chat & Video Demo</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 20px;
+      background: #f4f4f4;
+      color: #333;
+    }
+    h2 {
+      margin-top: 0;
+      color: #007BFF;
+    }
+    .section {
+      background: white;
+      padding: 15px;
+      margin-bottom: 20px;
+      border-radius: 8px;
+      box-shadow: 0 0 5px rgba(0,0,0,0.1);
+    }
+    textarea {
+      width: 100%;
+      height: 80px;
+      font-family: monospace;
+      margin-top: 5px;
+      resize: vertical;
+    }
+    button {
+      margin: 5px 0;
+      padding: 8px 16px;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    video {
+      width: 100%;
+      max-width: 400px;
+      height: auto;
+      border: 1px solid #ccc;
+      margin-bottom: 10px;
+    }
+    #chatBox {
+      border: 1px solid #ccc;
+      height: 150px;
+      overflow-y: scroll;
+      padding: 10px;
+      background: #fefefe;
+      margin-bottom: 10px;
+    }
+    #chatInput {
+      width: calc(100% - 100px);
+      padding: 8px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="section">
+    <h2>🔵 Peer A (Local)</h2>
+    <video id="localVideo" autoplay playsinline muted></video><br>
+    <button onclick="startCamera()">1. Bật Camera</button>
+    <button onclick="createOffer()">2. Tạo Offer</button>
+    <textarea id="offer" placeholder="Offer sẽ xuất hiện ở đây"></textarea>
+    <textarea id="answer" placeholder="Paste Answer từ Peer B ở đây"></textarea>
+    <button onclick="setAnswer()">3. Nhập Answer và kết nối</button>
+  </div>
+
+  <div class="section">
+    <h2>🔴 Peer B (Remote)</h2>
+    <video id="remoteVideo" autoplay playsinline></video><br>
+    <textarea id="remoteOffer" placeholder="Paste Offer từ Peer A ở đây"></textarea>
+    <button onclick="setRemoteOffer()">1. Nhập Offer</button>
+    <button onclick="createAnswer()">2. Tạo Answer</button>
+    <textarea id="generatedAnswer" placeholder="Answer sẽ xuất hiện ở đây"></textarea>
+  </div>
+
+  <div class="section">
+    <h2>💬 Chat giữa 2 Peer</h2>
+    <div id="chatBox"></div>
+    <input type="text" id="chatInput" placeholder="Nhập nội dung..." />
+    <button onclick="sendMessage()">Gửi</button>
+  </div>
+
+  <script>
+    let localStream;
+    let pcA; // Peer A
+    let pcB; // Peer B
+    let dataChannel; // For chat
+
+    async function startCamera() {
+      localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      document.getElementById("localVideo").srcObject = localStream;
+    }
+
+    async function createOffer() {
+      pcA = new RTCPeerConnection();
+
+      localStream.getTracks().forEach(track => {
+        pcA.addTrack(track, localStream);
+      });
+
+      dataChannel = pcA.createDataChannel("chat");
+      setupDataChannel(dataChannel);
+
+      pcA.onicecandidate = e => {
+        if (!e.candidate) {
+          document.getElementById("offer").value = JSON.stringify(pcA.localDescription);
+        }
+      };
+
+      pcA.ontrack = e => {
+        document.getElementById("remoteVideo").srcObject = e.streams[0];
+      };
+
+      const offer = await pcA.createOffer();
+      await pcA.setLocalDescription(offer);
+    }
+
+    async function setAnswer() {
+      const answer = JSON.parse(document.getElementById("answer").value);
+      await pcA.setRemoteDescription(answer);
+    }
+
+    async function setRemoteOffer() {
+      pcB = new RTCPeerConnection();
+
+      pcB.ondatachannel = e => {
+        setupDataChannel(e.channel);
+      };
+
+      pcB.onicecandidate = e => {
+        if (!e.candidate) {
+          document.getElementById("generatedAnswer").value = JSON.stringify(pcB.localDescription);
+        }
+      };
+
+      pcB.ontrack = e => {
+        document.getElementById("remoteVideo").srcObject = e.streams[0];
+      };
+
+      const offer = JSON.parse(document.getElementById("remoteOffer").value);
+      await pcB.setRemoteDescription(offer);
+    }
+
+    async function createAnswer() {
+      const answer = await pcB.createAnswer();
+      await pcB.setLocalDescription(answer);
+    }
+
+    function setupDataChannel(channel) {
+      channel.onmessage = (e) => {
+        const chatBox = document.getElementById("chatBox");
+        chatBox.innerHTML += `<div><b>Peer:</b> ${e.data}</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+      };
+      window.chatChannel = channel;
+    }
+
+    function sendMessage() {
+      const input = document.getElementById("chatInput");
+      const message = input.value.trim();
+      if (message && window.chatChannel && window.chatChannel.readyState === "open") {
+        window.chatChannel.send(message);
+        const chatBox = document.getElementById("chatBox");
+        chatBox.innerHTML += `<div style="color:green"><b>Bạn:</b> ${message}</div>`;
+        chatBox.scrollTop = chatBox.scrollHeight;
+        input.value = "";
+      }
+    }
+  </script>
+</body>
+</html>
